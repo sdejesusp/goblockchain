@@ -9,10 +9,12 @@ import (
 	"time"
 )
 
+const MINING_DIFFICULTY = 3
+
 type Block struct {
+	timestamp    int64
 	nonce        int
 	previousHash [32]byte
-	timestamp    int64
 	transactions []*Transaction
 }
 
@@ -36,31 +38,27 @@ func (b *Block) Print() {
 
 func (b *Block) Hash() [32]byte {
 	// m, _ := b.MarshalJSON()
-	
+
 	m, _ := json.Marshal(b)
-	
+
 	// fmt.Println(string(m))
 	return sha256.Sum256([]byte(m))
 }
 
-
 func (b *Block) MarshalJSON() ([]byte, error) {
 
-	return json.Marshal(struct{
-		Timestamp int64 `json:"timestamp"`
-		Nonce int `json:"nonce"`
-		PreviousHash [32]byte `json:"previous_hash"`
+	return json.Marshal(struct {
+		Timestamp    int64          `json:"timestamp"`
+		Nonce        int            `json:"nonce"`
+		PreviousHash [32]byte       `json:"previous_hash"`
 		Transactions []*Transaction `json:"transactions"`
 	}{
-		Timestamp: b.timestamp,
-		Nonce: b.nonce,
+		Timestamp:    b.timestamp,
+		Nonce:        b.nonce,
 		PreviousHash: b.previousHash,
 		Transactions: b.transactions,
 	})
 }
-
-
-
 
 type Blockchain struct {
 	transactionPool []*Transaction
@@ -81,11 +79,9 @@ func (bc *Blockchain) CreateBlock(nonce int, previousHash [32]byte) *Block {
 	return b
 }
 
-
 func (bc *Blockchain) LastBlock() *Block {
 	return bc.chain[len(bc.chain)-1]
 }
-
 
 func (bc *Blockchain) Print() {
 	for i, block := range bc.chain {
@@ -95,22 +91,48 @@ func (bc *Blockchain) Print() {
 	fmt.Printf("%s\n", strings.Repeat("*", 25))
 }
 
-
-
 func (bc *Blockchain) AddTransaction(sender string, recipient string, value float64) {
 	t := NewTransaction(sender, recipient, value)
 	bc.transactionPool = append(bc.transactionPool, t)
 }
 
-
-
-type Transaction struct{
-	senderAddress string
-	recipientAddress string
-	value float64
+func (bc *Blockchain) CopyTransactionPool() []*Transaction {
+	transactions := make([]*Transaction, 0)
+	for _, t := range bc.transactionPool {
+		transactions = append(transactions,
+			NewTransaction(t.senderAddress,
+				t.recipientAddress,
+				t.value))
+	}
+	return transactions
 }
 
-func NewTransaction(sender string, recipient string, value float64) *Transaction{
+func (bc *Blockchain) ValidProof(nonce int, previousHash [32]byte, transactions []*Transaction, difficulty int) bool {
+	zeros := strings.Repeat("0", difficulty)
+	guessBlock := Block{0, nonce, previousHash, transactions}
+	guessHashStr := fmt.Sprintf("%x", guessBlock.Hash())
+	fmt.Println(guessHashStr)
+	return guessHashStr[:difficulty] == zeros
+}
+
+func (bc *Blockchain) ProofOfWork() int {
+	transactions := bc.CopyTransactionPool()
+	previousHash := bc.LastBlock().Hash()
+	nonce := 0
+	for !bc.ValidProof(nonce, previousHash, transactions, MINING_DIFFICULTY) {
+		nonce += 1
+	}
+	return nonce
+
+}
+
+type Transaction struct {
+	senderAddress    string
+	recipientAddress string
+	value            float64
+}
+
+func NewTransaction(sender string, recipient string, value float64) *Transaction {
 	return &Transaction{sender, recipient, value}
 }
 
@@ -122,19 +144,17 @@ func (t *Transaction) Print() {
 
 }
 
-
 func (t *Transaction) MarshalJSON() ([]byte, error) {
-	return json.Marshal( struct{
-		Sender string `json:"sender_address"`
-		Recipient string `json:"recipient_address"`
-		Value float64 `json:"value"`
+	return json.Marshal(struct {
+		Sender    string  `json:"sender_address"`
+		Recipient string  `json:"recipient_address"`
+		Value     float64 `json:"value"`
 	}{
-		Sender: t.senderAddress,
+		Sender:    t.senderAddress,
 		Recipient: t.recipientAddress,
-		Value: t.value,
+		Value:     t.value,
 	})
 }
-
 
 func init() {
 	log.SetPrefix("Blockchain: ")
@@ -146,13 +166,15 @@ func main() {
 
 	blockChain.AddTransaction("A", "B", 1.0)
 	previousHash := blockChain.LastBlock().Hash()
-	blockChain.CreateBlock(5, previousHash)
+	nonce := blockChain.ProofOfWork()
+	blockChain.CreateBlock(nonce, previousHash)
 	blockChain.Print()
 
 	blockChain.AddTransaction("C", "D", 2.0)
 	blockChain.AddTransaction("X", "Y", 3.0)
 	previousHash = blockChain.LastBlock().Hash()
-	blockChain.CreateBlock(2, previousHash)
+	nonce = blockChain.ProofOfWork()
+	blockChain.CreateBlock(nonce, previousHash)
 	blockChain.Print()
 
 	// block := &Block{nonce: 1}
